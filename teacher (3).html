@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Listening 12 – Giáo viên</title>
+<style>
+:root{--bg:#f7f6f2;--card:#fff;--tx:#1f2328;--mut:#6b7280;--ok:#15803d;--bad:#b91c1c;--bd:#e3e1d9;--acc:#2339c9}
+@media (prefers-color-scheme:dark){:root{--bg:#16181d;--card:#1f2229;--tx:#e8e9ec;--mut:#9aa1ad;--ok:#4ade80;--bad:#f87171;--bd:#323640;--acc:#8aa0ff}}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:18px 14px 48px}
+h1{font-size:22px;margin:0 0 10px}.mut{color:var(--mut);font-size:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:14px 0}
+.wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.pill{padding:1px 9px;border-radius:99px;font-size:12px;border:1px solid var(--bd)}
+button{font:inherit;cursor:pointer;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;padding:6px 12px}
+.tabs{display:flex;gap:8px;margin:0 0 12px}
+.tab{padding:8px 20px;font-weight:700}
+.tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+</style></head><body><main>
+<h1>Theo dõi lớp – Listening 12</h1>
+<div class="tabs"><button class="tab" id="t-bai2">Bài 2</button><button class="tab" id="t-bai3">Bài 3</button></div>
+<div class="mut" id="info">Đang tải…</div>
+<div class="card"><div class="wrap"><table><thead id="h"></thead><tbody id="b"></tbody></table></div></div>
+<button id="csv">Tải bảng điểm (.csv)</button>
+<button id="rf">Tải lại ngay</button>
+<button id="rs" style="color:var(--bad)">Làm mới dữ liệu (xóa hết học sinh)</button>
+<span class="mut" id="msg" style="margin-left:8px"></span>
+<script>
+// ====== CẤU HÌNH: phải trùng với student-bai2.html / student-bai3.html ======
+const DB_URL = "https://nghe12unit4-default-rtdb.asia-southeast1.firebasedatabase.app";
+const BAIS = {
+  bai2:{cls:"lop12a1_bai2",label:"Bài 2",id:"e1",n:5},
+  bai3:{cls:"lop12a1_bai3",label:"Bài 3",id:"e2",n:4}
+};
+// =============================================================================
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=s=>Math.floor(s/60)+"p "+String(s%60).padStart(2,"0")+"s";
+const hm=t=>t?new Date(t).toLocaleTimeString("vi-VN"):"–";
+let cur=location.hash==="#bai3"?"bai3":"bai2",rows=[],keys=[],TOTAL=0,seq=0;
+const B=()=>BAIS[cur];
+const lab=k=>B().label.replace("Bài ","B")+"."+k.split("_")[1];
+function setup(){
+  TOTAL=B().n;keys=[];for(let i=1;i<=B().n;i++)keys.push(B().id+"_"+i);
+  document.title="Listening 12 – Giáo viên – "+B().label;
+  for(const k in BAIS)$("#t-"+k).classList.toggle("on",k===cur);
+  $("#h").innerHTML='<tr><th>Hạng</th><th>Tên</th><th>Trạng thái</th><th>Bắt đầu</th><th>Nộp lúc</th><th>Thời gian</th><th>Điểm</th>'+keys.map(k=>'<th>'+lab(k)+'</th>').join('')+'</tr>';
+  rows=[];$("#b").innerHTML="";$("#info").textContent="Đang tải…";
+}
+// Xếp hạng: nhiều câu đúng hơn đứng trên; bằng điểm thì ai nộp nhanh hơn (thời gian làm ngắn hơn) đứng trên.
+// Bạn chưa nộp xếp sau cùng, theo thứ tự bắt đầu.
+const durOf=x=>(x.submittedAt-x.startedAt);
+function rankSort(a,b){
+  const fa=a.status==="done",fb=b.status==="done";
+  if(fa!==fb)return fa?-1:1;
+  if(!fa)return (a.startedAt||0)-(b.startedAt||0);
+  if(b.total!==a.total)return b.total-a.total;
+  return durOf(a)-durOf(b);
+}
+function assignRanks(list){
+  let prev=null,rank=0;
+  list.forEach((x,i)=>{
+    if(x.status!=="done"){x.rank="–";return}
+    if(!prev||prev.total!==x.total||durOf(prev)!==durOf(x))rank=i+1;
+    x.rank=rank;prev=x;
+  });
+}
+async function load(){
+  const my=seq,cls=B().cls;
+  try{
+    const r=await fetch(DB_URL+"/"+cls+".json");const d=(await r.json())||{};
+    if(my!==seq)return; // đã chuyển sang bài khác trong lúc tải
+    rows=Object.values(d).sort(rankSort);assignRanks(rows);
+    const done=rows.filter(x=>x.status==="done");
+    const avg=done.length?(done.reduce((s,x)=>s+x.total,0)/done.length).toFixed(1):"–";
+    $("#info").textContent=B().label+" · Tổng "+rows.length+" học sinh · đã nộp "+done.length+" · điểm TB "+avg+"/"+TOTAL+" · xếp hạng theo số câu đúng, rồi thời gian · tự cập nhật mỗi 3 giây";
+    $("#b").innerHTML=rows.map(x=>{const f=x.status==="done",dur=f?Math.round((x.submittedAt-x.startedAt)/1000):null;
+      const medal=x.rank===1?"🥇 ":x.rank===2?"🥈 ":x.rank===3?"🥉 ":"";
+      return '<tr><td><b>'+medal+x.rank+'</b></td><td><b>'+esc(x.name)+'</b></td><td>'+(f?'<span class="pill ok">Đã nộp</span>':'<span class="pill">Đang làm</span>')+'</td><td>'+hm(x.startedAt)+'</td><td>'+hm(x.submittedAt)+'</td><td>'+(f?fmt(dur):"–")+'</td>'+
+      '<td>'+(f?'<b>'+x.total+'/'+TOTAL+'</b>':"–")+'</td>'+
+      keys.map(k=>{const a=f&&x.answers&&x.answers[k];return a?'<td class="'+(a.ok?"ok":"bad")+'">'+esc(a.v)+'</td>':"<td>–</td>"}).join('')+'</tr>'}).join("")||'<tr><td colspan="9" class="mut">Chưa có học sinh nào.</td></tr>';
+  }catch(e){if(my===seq)$("#info").textContent="Không kết nối được Firebase. Kiểm tra DB_URL."}
+}
+function show(k){cur=k;seq++;try{history.replaceState(null,"","#"+k)}catch(e){}setup();load()}
+$("#t-bai2").onclick=()=>show("bai2");
+$("#t-bai3").onclick=()=>show("bai3");
+$("#csv").onclick=()=>{
+  const L=[["Hang","Ten","Trang thai","Bat dau","Nop luc","Thoi gian (giay)","Diem "+B().label.replace("Bài","Bai")].concat(keys.map(lab))];
+  rows.forEach(x=>{const f=x.status==="done";L.push([x.rank,x.name,x.status,hm(x.startedAt),hm(x.submittedAt),f?Math.round((x.submittedAt-x.startedAt)/1000):"",f?x.total:""].concat(keys.map(k=>f&&x.answers[k]?x.answers[k].v:"")))});
+  const csv="﻿"+L.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="listening12_"+cur+".csv";a.click();
+};
+$("#rf").onclick=load;
+// Làm mới dữ liệu: xóa toàn bộ học sinh của BÀI ĐANG XEM để bắt đầu tiết mới. Nên tải CSV trước.
+$("#rs").onclick=async()=>{
+  const cls=B().cls;
+  if(!confirm("Xóa TOÀN BỘ dữ liệu học sinh ("+rows.length+" bạn) của "+B().label+" ("+cls+")?\nNên bấm 'Tải bảng điểm (.csv)' trước. Không thể khôi phục."))return;
+  try{
+    const r=await fetch(DB_URL+"/"+cls+".json",{method:"DELETE"});
+    if(!r.ok)throw new Error(r.status);
+    $("#msg").textContent="Đã xóa dữ liệu "+B().label+".";await load();
+  }catch(e){$("#msg").textContent="Không xóa được. Kiểm tra Rules của Firebase (cần \".write\": true)."}
+  setTimeout(()=>$("#msg").textContent="",5000);
+};
+setup();load();setInterval(load,3000);
+</script></main></body></html>
